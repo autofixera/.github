@@ -1,127 +1,136 @@
-# Welcome to AutoFixera 👋
+# Welcome to AutoFixera
 
-AutoFixera is a next-generation, cloud-native auto repair franchise management system. 
+> **AutoFixera** is a next-generation, cloud-native auto repair franchise management system.
 
 We simulate a large-scale, nationwide chain of automotive workshops operating across Indonesia. Our platform handles thousands of concurrent transactions—from tracking customer vehicles and parts inventory to issuing complex invoices and streaming real-time revenue analytics back to the central headquarters.
 
 ---
 
-## 🏢 Business Overview
+## Business Overview
 
 In the fast-paced auto repair industry, tracking parts, labor, and customer histories across hundreds of franchised garages is a logistical nightmare. AutoFixera solves this by decentralizing operations into highly scalable microservices while centralizing the data flow for real-time visibility.
 
-- **Scale:** Simulates high-throughput workshop transactions.
-- **Currency:** Fully localized to Indonesian Rupiah (IDR).
-- **Domain:** Automotive repair, servicing, parts replacement, and customer loyalty.
+* **Scale:** Built to simulate high-throughput, concurrent workshop transactions.
+* **Currency:** Fully localized to Indonesian Rupiah (IDR).
+* **Domain Focus:** Automotive repair workflows, servicing schedules, parts replacement, and customer loyalty retention.
 
 ---
 
-## 🏗️ Ecosystem Architecture
+## Ecosystem Architecture
 
-AutoFixera is built on a modern event-driven microservices architecture utilizing **Java, Spring Boot 3, Apache Kafka, and PostgreSQL**.
+AutoFixera is built on a modern, event-driven microservices architecture utilizing **Java, Spring Boot 3, Apache Kafka, and PostgreSQL**. 
+
+The system is organized into distinct layers to ensure separation of concerns, scalability, and resilience.
 
 ```mermaid
-graph TD
-    %% Clients
-    Browser([Workshop Manager Browser])
-    
-    %% Gateway
-    Gateway[API Gateway<br/>Spring Cloud Gateway]
-    Browser -->|HTTP REST| Gateway
-    
-    %% UI
-    UI[Analytics UI<br/>Vanilla JS / Glassmorphism]
-    Browser -->|Fetches Dashboard| UI
-    
-    %% Core Services
-    subgraph Microservices
-        Customer[Customer Service<br/>Manages Profiles & Vehicles]
-        Billing[Billing Service<br/>Manages Invoices & Payments]
-        Analytics[Analytics Service<br/>Real-time Aggregation]
+flowchart TB
+    %% --- LAYER 1: Presentation ---
+    subgraph Presentation["📱 Presentation Layer"]
+        direction LR
+        Browser([Workshop Manager])
+        UI[Analytics Dashboard<br/>Vanilla JS / Glassmorphism]
     end
+
+    %% --- LAYER 2: API Gateway ---
+    subgraph Edge["🌐 Edge Layer"]
+        Gateway{API Gateway<br/>Spring Cloud Gateway}
+    end
+
+    %% --- LAYER 3: Microservices ---
+    subgraph Microservices["⚙️ Microservices Layer"]
+        direction LR
+        Customer[Customer Service<br/>gRPC Server]
+        Billing[Billing Service<br/>gRPC Client]
+        Analytics[Analytics Service<br/>Event Consumer]
+    end
+
+    %% --- LAYER 4: Data & Events ---
+    subgraph DataLayer["💾 Data & Event Layer"]
+        direction LR
+        Kafka{{Apache Kafka<br/>Event Bus}}
+        DB_C[(Customer DB)]
+        DB_B[(Billing DB)]
+        DB_A[(Analytics DB)]
+    end
+
+    %% --- CONNECTIONS ---
     
-    Gateway -->|Routes Traffic| Customer
-    Gateway -->|Routes Traffic| Billing
-    UI -->|Fetches Data| Analytics
+    %% Client to Edge
+    Browser -->|REST HTTP| Gateway
+    UI -->|Fetch Metrics| Gateway
     
-    %% Inter-service
-    Billing -.->|gRPC: Validate Customer| Customer
-    
-    %% Event Streaming
-    Kafka{{Apache Kafka<br/>Event Bus}}
-    Customer -.->|Produces: CustomerEvent| Kafka
-    Billing -.->|Produces: BillingEvent| Kafka
+    %% Edge to Services
+    Gateway -->|Routes| Customer
+    Gateway -->|Routes| Billing
+    Gateway -->|Routes| Analytics
+
+    %% Inter-service Sync
+    Billing -.->|gRPC Validate| Customer
+
+    %% Event Streaming (Async)
+    Customer -.->|Produces Event| Kafka
+    Billing -.->|Produces Event| Kafka
     Kafka ===>|Consumes Stream| Analytics
-    
-    %% Databases
-    DB_C[(Customer DB)]
-    DB_B[(Billing DB)]
-    DB_A[(Analytics DB)]
-    
+
+    %% Database Connections
     Customer --- DB_C
     Billing --- DB_B
     Analytics --- DB_A
 
-    classDef service fill:#3b82f6,color:#fff,stroke:#2563eb;
-    classDef infra fill:#10b981,color:#fff,stroke:#059669;
-    classDef ui fill:#8b5cf6,color:#fff,stroke:#7c3aed;
-    classDef gateway fill:#f59e0b,color:#fff,stroke:#d97706;
+    %% --- STYLING ---
+    classDef layer fill:none,stroke:#94a3b8,stroke-width:2px,stroke-dasharray: 5 5;
+    class Presentation,Edge,Microservices,DataLayer layer;
     
-    class Customer,Billing,Analytics service;
-    class DB_C,DB_B,DB_A,Kafka infra;
-    class UI ui;
+    classDef ui fill:#8b5cf6,color:#fff,stroke:#7c3aed,stroke-width:2px;
+    classDef gateway fill:#f59e0b,color:#fff,stroke:#d97706,stroke-width:2px;
+    classDef service fill:#3b82f6,color:#fff,stroke:#2563eb,stroke-width:2px;
+    classDef infra fill:#10b981,color:#fff,stroke:#059669,stroke-width:2px;
+
+    class Browser,UI ui;
     class Gateway gateway;
+    class Customer,Billing,Analytics service;
+    class Kafka,DB_C,DB_B,DB_A infra;
+
 ```
 
 ---
 
-## 💸 Core Domain Workflow: The Invoice Lifecycle
+## Core Domain Workflow: The Invoice Lifecycle
 
-The core of the AutoFixera business is the workshop service invoice. 
+The core of the AutoFixera business is the workshop service invoice.
 
-When a customer brings their car in for an oil change or major repair, an invoice is generated. This invoice travels through several states, triggering asynchronous Kafka events that update our company-wide analytics dashboard in real-time.
+When a customer brings their car in for an oil change or major repair, an invoice is generated. This invoice travels through several strictly validated states, ultimately triggering asynchronous Kafka events that update our company-wide analytics dashboard in real-time.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DRAFT: Mechanic creates ticket
+    direction LR
     
-    DRAFT --> ISSUED: Customer approves quote
-    note right of DRAFT
-      Adding parts (e.g., Brake Pads)
-      and labor (e.g., Oil Change)
+    [*] --> DRAFT : Create Ticket
+    DRAFT --> ISSUED : Add Parts & Labor\nApprove Quote
+    ISSUED --> PENDING_PAYMENT : Service Completed
+    PENDING_PAYMENT --> PAID : Customer Pays (IDR)
+    PAID --> [*] : Transaction Closed
+    
+    note right of PAID
+        ⚡ Kafka Event Emitted!
+        Analytics Service updates
+        HQ Revenue Dashboards.
     end note
-    
-    ISSUED --> PENDING_PAYMENT: Service completed
-    note right of ISSUED
-      Waiting on mechanics 
-      to finish the job.
-    end note
-    
-    PENDING_PAYMENT --> PAID: Customer pays bill (IDR)
-    note right of PENDING_PAYMENT
-      Cashier accepts payment.
-    end note
-    
-    PAID --> [*]: Transaction complete
-    
-    note left of PAID
-      ⚡ Kafka Event Emitted!
-      Analytics Service updates
-      HQ Revenue Dashboards.
-    end note
+
 ```
 
 ---
 
-## 📂 Repository Index
+## Repository Index
 
-Our ecosystem is split into domain-specific repositories to ensure strict isolation and independent deployment cycles.
+Our ecosystem is intentionally split into domain-specific repositories. This mono-repo structure ensures strict isolation, independent deployment cycles, and clear domain boundaries.
 
-| Repository | Description | Primary Tech Stack |
+| Repository | Primary Tech Stack | Description |
 | --- | --- | --- |
-| **`autofixera-infra`** | The heart of our local and cloud orchestration. Contains Docker Compose files and Makefiles to spin up the entire ecosystem. | Docker, GNU Make, Bash |
-| **`api-gateway`** | The unified entry point. Handles all routing and cross-cutting concerns for incoming HTTP requests. | Spring Cloud Gateway |
-| **`customer-service`** | Manages customer profiles, vehicle data, and exposes gRPC endpoints for synchronous validation. | Spring Boot 3, PostgreSQL, gRPC |
-| **`billing-service`** | Handles invoice generation, payment processing, and pushes financial events to Kafka. | Spring Boot 3, PostgreSQL, Kafka |
-| **`analytics-service`** | A high-performance consumer that materializes Kafka event streams into queryable metrics for HQ. | Spring Boot 3, PostgreSQL, Kafka |
-| **`analytics-ui`** | A blazing-fast, 100/100 Lighthouse score frontend dashboard with a premium dark-mode glassmorphism design. | Vanilla JS/CSS, HTML5, Nginx |
+| **`autofixera-infra`** | Docker, GNU Make, Bash | The heart of our local and cloud orchestration. Contains Docker Compose files and Makefiles to spin up the entire ecosystem seamlessly. |
+| **`api-gateway`** | Spring Cloud Gateway | The unified entry point. Handles all routing, CORS, and cross-cutting concerns for incoming HTTP requests. |
+| **`customer-service`** | Spring Boot 3, PostgreSQL, gRPC | Manages customer profiles, vehicle data, and exposes high-performance gRPC endpoints for synchronous data validation. |
+| **`billing-service`** | Spring Boot 3, PostgreSQL, Kafka | Handles invoice generation, payment processing, and reliably pushes financial events to the message broker. |
+| **`analytics-service`** | Spring Boot 3, PostgreSQL, Kafka | A high-performance consumer that materializes Kafka event streams into highly queryable metrics for HQ. |
+| **`analytics-ui`** | Vanilla JS/CSS, HTML5, Nginx | A blazing-fast, frontend dashboard featuring a premium dark-mode glassmorphism design. |
+
